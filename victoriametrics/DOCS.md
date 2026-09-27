@@ -200,6 +200,76 @@ So the [InfluxDB sensor platform][influxdb-sensor], which reads values back out
 of a database and into Home Assistant, does not work against this app. Query
 the data from Grafana or `vmui` instead.
 
+### Bringing over your InfluxDB history
+
+Coming from the InfluxDB app, or any other InfluxDB 1.x database? The history
+you collected there can be copied over with [`vmctl`][vmctl], the migration
+tool from the VictoriaMetrics project. It reads straight from InfluxDB and
+writes into this app, and your InfluxDB database is left untouched.
+
+**Keep your existing `influxdb:` configuration.** When you point the
+integration at this app, change only the connection details (`host`, `port`,
+`username` and `password`) and leave `measurement_attr`, `tags_attributes` and
+the rest as they were, even if they differ from the example above. The
+migrated history is named exactly the way your old configuration named it, and
+new data only lines up with it when it keeps arriving under the same names.
+
+With the defaults of the InfluxDB integration, the measurement is the unit, so
+a temperature sensor comes across as:
+
+```text
+°C_value{db="homeassistant", domain="sensor", entity_id="office_temperature"}
+```
+
+Query that as `{__name__="°C_value", entity_id="office_temperature"}`, since a
+name with a `°` in it cannot be typed as it is.
+
+To migrate:
+
+1. Point the InfluxDB integration at this app first, as described above, so
+   nothing is missed while the migration runs. Note the time you did this.
+1. Make sure the port of this app is exposed, as described under
+   [Direct access](#direct-access), and that the InfluxDB port is reachable
+   too. The InfluxDB app exposes port `8086` by default.
+1. Download `vmctl` for your computer from the
+   [VictoriaMetrics releases][vm-releases]. It is part of the `vmutils`
+   archive.
+1. Run it, using the database and credentials from your old `influxdb:`
+   configuration, and a Home Assistant user for this app:
+
+   ```bash
+   vmctl influx \
+     --influx-addr "http://homeassistant.local:8086" \
+     --influx-database "homeassistant" \
+     --influx-user "your-influxdb-user" \
+     --influx-password "your-influxdb-password" \
+     --influx-filter-time-end "2026-09-27T12:00:00Z" \
+     --vm-addr "http://homeassistant.local:8428" \
+     --vm-user "your-ha-user" \
+     --vm-password "your-ha-password"
+   ```
+
+   Set `--influx-filter-time-end` to the moment you switched the integration
+   over, so nothing is written twice. With [`ssl`](#option-ssl) turned on, use
+   `https://` for `--vm-addr` and add `--vm-insecure-skip-verify` if the
+   certificate is not issued for the address you connect to.
+
+`vmctl` shows what it found and asks before it starts. Years of history can
+take a while, but the migration can run while both apps keep working as usual.
+
+A few things to know up front:
+
+- Only numbers come across. Text fields, like the `state` of a switch or
+  attributes stored as text, are skipped, which is what VictoriaMetrics would
+  do with them anyway.
+- Disk space is rarely the problem. VictoriaMetrics stores the same data in a
+  fraction of the space InfluxDB used, so the copy needs far less room than
+  the original.
+- Older data still falls under the [`retention_period`](#option-retention_period)
+  option. Anything older than that is skipped during the import, so raise it
+  first if you want to keep everything.
+- Once you are happy with the result, the InfluxDB app and its data can go.
+
 ## Collecting metrics from elsewhere
 
 To scrape targets other than Home Assistant, for example a router, a NAS or a
@@ -779,3 +849,5 @@ SOFTWARE.
 [semver]: https://semver.org/spec/v2.0.0.html
 [stream-aggregation]: https://docs.victoriametrics.com/victoriametrics/stream-aggregation/
 [victoriametrics]: https://victoriametrics.com/
+[vm-releases]: https://github.com/VictoriaMetrics/VictoriaMetrics/releases/latest
+[vmctl]: https://docs.victoriametrics.com/victoriametrics/vmctl/
