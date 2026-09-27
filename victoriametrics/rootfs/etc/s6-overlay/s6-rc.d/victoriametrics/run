@@ -34,6 +34,14 @@ if bashio::config.has_value 'dedup_min_scrape_interval'; then
     options+=(-dedup.minScrapeInterval "$(bashio::config 'dedup_min_scrape_interval')")
 fi
 
+if bashio::config.has_value 'stream_aggr_config'; then
+    options+=(-streamAggr.config "/config/$(bashio::config 'stream_aggr_config')")
+
+    if bashio::config.true 'stream_aggr_keep_input'; then
+        options+=(-streamAggr.keepInput)
+    fi
+fi
+
 if bashio::config.has_value 'memory_allowed_percent'; then
     options+=(-memory.allowedPercent "$(bashio::config 'memory_allowed_percent')")
 fi

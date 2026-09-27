@@ -41,6 +41,8 @@ schema:
   scrape_config: str?
   retention_period: str
   dedup_min_scrape_interval: str?
+  stream_aggr_config: str?
+  stream_aggr_keep_input: bool?
   min_free_disk_space: str
   latency_offset: str
   memory_allowed_percent: int(10,90)?

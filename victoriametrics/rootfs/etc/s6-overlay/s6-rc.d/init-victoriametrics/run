@@ -9,6 +9,7 @@ readonly SCRAPE_CONFIG="/etc/victoriametrics/scrape.yaml"
 declare retention
 declare latency_offset
 declare scrape_config
+declare stream_aggr_config
 declare -i jobs=0
 
 mkdir -p "${STORAGE}"
@@ -44,6 +45,32 @@ if ! [[ "${latency_offset}" =~ ^(0|[0-9]+(\.[0-9]+)?(ms|s|m|h))$ ]]; then
     bashio::log.fatal "1m, 5s or 0s to switch it off entirely."
     bashio::log.fatal
     bashio::exit.nok
+fi
+
+# The stream aggregation rules are used as they are, straight from this app's
+# configuration directory. Check them here, so a typo is a clear error in the
+# log rather than VictoriaMetrics restarting over it.
+if bashio::config.has_value 'stream_aggr_config'; then
+    stream_aggr_config="/config/$(bashio::config 'stream_aggr_config')"
+
+    if ! bashio::fs.file_exists "${stream_aggr_config}"; then
+        bashio::log.fatal
+        bashio::log.fatal "The configured stream aggregation file is missing:"
+        bashio::log.fatal "  ${stream_aggr_config}"
+        bashio::log.fatal
+        bashio::log.fatal "The file is looked up in this app's own"
+        bashio::log.fatal "configuration directory."
+        bashio::log.fatal
+        bashio::exit.nok
+    fi
+
+    if ! victoria-metrics \
+        -streamAggr.config="${stream_aggr_config}" \
+        -dryRun \
+        -loggerLevel=ERROR;
+    then
+        bashio::exit.nok "The stream aggregation configuration is not valid"
+    fi
 fi
 
 # The scrape configuration is rebuilt from the app options on every start, so
