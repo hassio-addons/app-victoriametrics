@@ -56,11 +56,39 @@ and restart it as well. Give it a few minutes and try a query like
 That integration takes filters of its own, which is where you decide _which_
 entities end up in here. Sending everything is a fine place to start, but on a
 large installation it is worth excluding the entities you know you will never
-plot.
+plot:
+
+```yaml
+prometheus:
+  filter:
+    include_domains:
+      - binary_sensor
+      - climate
+      - sensor
+      - switch
+    exclude_entity_globs:
+      - sensor.*_linkquality
+```
+
+The filter is the only thing to tune on this route. Unlike the
+[InfluxDB integration](#sending-home-assistant-metrics-with-the-influxdb-integration),
+the Prometheus integration does not turn every attribute into a metric of its
+own, so there is no `ignore_attributes` equivalent and no need for one.
 
 This app reaches that endpoint through the Supervisor, so there is no access
 token to create and no address to fill in. If it cannot reach it at startup,
 the log says so and tells you what to add.
+
+### What about the recorder?
+
+Leave it alone. This app does not replace Home Assistant's recorder, it sits
+next to it, and nothing changes on the Home Assistant side when you install
+it. The long term statistics the recorder keeps are what the energy dashboard
+and the statistics graph card run on, and they are small, so there is nothing
+to gain by turning them off.
+
+What you can do, once your history lives here, is lower the recorder's
+`purge_keep_days` if you had raised it only to keep a long history around.
 
 ## Sending Home Assistant metrics with the InfluxDB integration
 
@@ -190,6 +218,16 @@ scrape_configs:
           - 192.168.1.10:9100
 ```
 
+That is all there is to it, provided the target already serves its metrics in
+the Prometheus format, which is what an "exporter" does. There is no mapping
+to write: the metric names and labels are stored exactly as the target
+publishes them. Something that does not speak that format needs an exporter in
+front of it first; the Prometheus project keeps a [list of them][exporters].
+
+The example only scratches the surface. Jobs can set their own interval, use
+authentication, rewrite labels and more; the
+[upstream scrape configuration documentation][scrape-config] covers all of it.
+
 These jobs are added to the Home Assistant one rather than replacing it. The
 configuration is checked when the app starts; if something in it is wrong, the
 app stops with the parse error in its log instead of starting up half working.
@@ -210,6 +248,63 @@ Home Assistant itself can do this through its InfluxDB integration, which has
 The app ships with `vmui`, VictoriaMetrics' own web interface, which is what
 the "OPEN WEB UI" button opens. It is good at exploring: run a query, see the
 graph, look at what labels exist. For dashboards you will want Grafana.
+
+A few queries to get started with, for the
+[scrape route](#collecting-home-assistant-metrics):
+
+```promql
+# Every temperature sensor
+homeassistant_sensor_temperature_celsius
+
+# One of them, by entity ID
+homeassistant_sensor_temperature_celsius{entity="sensor.office_temperature"}
+
+# The daily average of it
+avg_over_time(homeassistant_sensor_temperature_celsius{entity="sensor.office_temperature"}[1d])
+
+# Which of your lights are on right now
+homeassistant_light_brightness_percent > 0
+```
+
+With [the InfluxDB integration](#sending-home-assistant-metrics-with-the-influxdb-integration),
+metrics are named after the entity instead, so the same sensor is
+`office_temperature_value`. Not sure what a metric is called? Start typing in
+the query field and `vmui` completes it.
+
+## Keeping an eye on the database
+
+Two questions come up once things are running: what is actually in here, and
+how big is it getting.
+
+For the first, open the web interface and pick "Explore cardinality" from the
+"Explore" menu. It lists how many time series every metric has, and which
+labels and entities contribute the most. That is the page to check when the
+database grows faster than you expected; the usual cause is a handful of
+entities, or attributes, you never meant to store.
+
+For the second, the app keeps metrics about VictoriaMetrics itself, collected
+at the same interval as everything else, so the answers are queries:
+
+```promql
+# Disk space used by the database, in bytes
+sum(vm_data_size_bytes)
+
+# Free disk space left, in bytes
+vm_free_disk_space_bytes
+
+# Number of stored samples
+sum(vm_rows)
+
+# Samples written per second
+sum(rate(vm_rows_inserted_total[5m]))
+
+# Time series that received data in the past hour
+vm_cache_entries{type="storage/hour_metric_ids"}
+```
+
+For a complete picture, import the official
+[VictoriaMetrics single-node dashboard][grafana-dashboard] into Grafana and
+point it at this data source.
 
 ## Using it with the Grafana app
 
@@ -620,10 +715,12 @@ SOFTWARE.
 [data-ingestion]: https://docs.victoriametrics.com/victoriametrics/data-ingestion/
 [discord-ha]: https://discord.gg/c5DvZ4e
 [discord]: https://discord.me/hassioaddons
+[exporters]: https://prometheus.io/docs/instrumenting/exporters/
 [file-editor]: https://github.com/home-assistant/addons/tree/master/configurator
 [forum]: https://community.home-assistant.io/t/?u=frenck
 [frenck]: https://github.com/frenck
 [grafana-addon]: https://github.com/hassio-addons/app-grafana
+[grafana-dashboard]: https://grafana.com/grafana/dashboards/10229
 [influxdb-sensor]: https://www.home-assistant.io/integrations/influxdb/#sensor
 [influxdb]: https://www.home-assistant.io/integrations/influxdb/
 [metricsql]: https://docs.victoriametrics.com/metricsql/
@@ -631,5 +728,6 @@ SOFTWARE.
 [prometheus]: https://www.home-assistant.io/integrations/prometheus/
 [reddit]: https://reddit.com/r/homeassistant
 [releases]: https://github.com/hassio-addons/app-victoriametrics/releases
+[scrape-config]: https://docs.victoriametrics.com/victoriametrics/sd_configs/
 [semver]: https://semver.org/spec/v2.0.0.html
 [victoriametrics]: https://victoriametrics.com/
