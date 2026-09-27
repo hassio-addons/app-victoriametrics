@@ -31,7 +31,7 @@ options:
   retention_period: 3y
   min_free_disk_space: 1GB
   latency_offset: 1m
-  ssl: true
+  ssl: false
   certfile: fullchain.pem
   keyfile: privkey.pem
 schema:
