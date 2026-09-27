@@ -205,6 +205,37 @@ described under [Direct access](#direct-access). See the
 Home Assistant itself can do this through its InfluxDB integration, which has
 [a section of its own](#sending-home-assistant-metrics-with-the-influxdb-integration).
 
+## Aggregating metrics as they arrive
+
+Stream aggregation summarizes metrics on their way in, for example turning a
+sensor that reports every few seconds into one average, minimum and maximum
+per five minutes. It is the closest thing here to the continuous queries you
+may know from InfluxDB, with one important difference: it only ever sees new
+data. It does not go back and thin out what is already stored.
+
+Write the rules to a file in this app's configuration directory and point the
+`stream_aggr_config` option at it:
+
+```yaml
+- match: '{__name__=~"homeassistant_sensor_.+"}'
+  interval: 5m
+  outputs: [avg, min, max]
+```
+
+That stores `homeassistant_sensor_temperature_celsius:5m_avg`,
+`..._min` and `..._max`, keeping every label, and works the same for scraped
+and pushed data. The [upstream documentation][stream-aggregation] lists
+everything else a rule can do, like dropping labels or picking other outputs.
+
+**Warning**: _By default the raw samples that match a rule are thrown away
+once they are aggregated, and only the result is stored. That is the point if
+you want to save space, but it means the original values are gone for good.
+Turn on `stream_aggr_keep_input` to store both._
+
+Metrics that match no rule are stored as usual. The file is checked when the
+app starts; if something in it is wrong, the app stops with the error in its
+log.
+
 ## Viewing your metrics
 
 The app ships with `vmui`, VictoriaMetrics' own web interface, which is what
@@ -410,6 +441,20 @@ This is useful when the same metrics reach this database from more than one
 place, for example when two collectors watch the same target for redundancy.
 Leave it empty to store every sample as it arrives.
 
+### Option: `stream_aggr_config`
+
+The name of a YAML file in this app's configuration directory that holds
+stream aggregation rules, as described under
+[Aggregating metrics as they arrive](#aggregating-metrics-as-they-arrive).
+
+Leave it empty to store metrics exactly as they arrive.
+
+### Option: `stream_aggr_keep_input`
+
+Also store the raw samples that match a stream aggregation rule, instead of
+only the aggregated result. Off by default, which is what saves the disk
+space; turn it on when you want the summary next to the full detail.
+
 ### Option: `min_free_disk_space`
 
 New metrics are refused once free disk space drops below this amount, for
@@ -529,6 +574,8 @@ app belongs in your daily backup or only in the occasional full one.
 - There is no downsampling. Old data keeps its full resolution forever rather
   than being thinned out, which is why retention is worth thinking about. It is
   not a feature the open source build has.
+  [Stream aggregation](#aggregating-metrics-as-they-arrive) can store new data
+  at a lower resolution from the start instead.
 - There is no alerting or recording rule engine here. Those live in `vmalert`,
   which this app does not ship; use Home Assistant's own automations against
   the data instead.
@@ -610,4 +657,5 @@ SOFTWARE.
 [reddit]: https://reddit.com/r/homeassistant
 [releases]: https://github.com/hassio-addons/app-victoriametrics/releases
 [semver]: https://semver.org/spec/v2.0.0.html
+[stream-aggregation]: https://docs.victoriametrics.com/victoriametrics/stream-aggregation/
 [victoriametrics]: https://victoriametrics.com/
