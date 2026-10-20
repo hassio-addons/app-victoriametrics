@@ -7,7 +7,7 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 # Setup base
 ARG BUILD_ARCH=amd64
-ARG VICTORIAMETRICS_VERSION="v1.154.0"
+ARG VICTORIAMETRICS_VERSION="v1.154.1"
 RUN \
     apk add --no-cache \
         nginx=1.30.4-r1 \
