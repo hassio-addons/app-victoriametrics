@@ -739,8 +739,8 @@ backup. A time series database that is copied while it is writing can come back
 subtly broken, so the live data is not what ends up in the backup. Instead,
 right before the backup, the app asks VictoriaMetrics for a snapshot, which is
 a consistent copy of the data at one moment, and the backup holds that copy.
-It is made with hard links, so it takes no extra disk space and is ready in
-moments. When the app is restored, the copy is put back in place before
+It is made with hard links, so it is ready in moments and takes next to no
+extra disk space while the backup runs. When the app is restored, the copy is put back in place before
 VictoriaMetrics starts.
 
 Things to know:

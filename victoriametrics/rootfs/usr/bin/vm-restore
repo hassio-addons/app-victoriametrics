@@ -24,16 +24,22 @@ if [[ -e "${STORAGE}/data" ]]; then
         log "Removing a leftover backup copy"
         rm -rf "${STAGE}"
     fi
+    rm -f "${STAGE}.snapshot"
     exit 0
 fi
 
 if [[ -d "${STAGE}/data" ]]; then
     log "Restoring the database from the backup"
     mkdir -p "${STORAGE}"
-    mv "${STAGE}/data" "${STORAGE}/data"
+    # The data goes last. Its presence is what tells a later start that the
+    # restore is done, so an interrupted restore is simply repeated.
     if [[ -d "${STAGE}/metadata" ]]; then
         mv "${STAGE}/metadata" "${STORAGE}/metadata"
     fi
+    if [[ -d "${STAGE}/indexdb" ]]; then
+        mv "${STAGE}/indexdb" "${STORAGE}/indexdb"
+    fi
+    mv "${STAGE}/data" "${STORAGE}/data"
     rm -rf "${STAGE}"
     log "Done"
 fi

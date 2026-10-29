@@ -15,7 +15,9 @@ set -o errexit -o nounset -o pipefail
 readonly API="${VM_API:-http://127.0.0.1:48428}"
 readonly STORAGE="${VM_STORAGE:-/data/victoriametrics}"
 readonly STAGE="${VM_BACKUP_STAGE:-/data/backup-snapshot}"
+readonly MARKER="${STAGE}.snapshot"
 declare snapshot=""
+declare stale=""
 
 log() {
     echo "[vm-backup-pre] $*"
@@ -28,15 +30,22 @@ cleanup_failed() {
         curl --silent --max-time 60 \
             "${API}/snapshot/delete?snapshot=${snapshot}" > /dev/null || true
     fi
+    rm -f "${MARKER}"
 }
 trap cleanup_failed ERR
 
 # A copy left behind by an earlier backup that did not finish is of no use.
 rm -rf "${STAGE}"
 
-# Snapshots of earlier runs that were never cleaned up would only hold on to
-# disk space, since they keep old data files alive.
-curl --silent --max-time 60 "${API}/snapshot/delete_all" > /dev/null || true
+# A snapshot of an earlier run that was never cleaned up would only hold on to
+# disk space, since it keeps old data files alive. Only the snapshot this
+# script made itself is removed, others may belong to somebody else.
+if [[ -f "${MARKER}" ]]; then
+    stale=$(< "${MARKER}")
+    curl --silent --max-time 60 \
+        "${API}/snapshot/delete?snapshot=${stale}" > /dev/null || true
+    rm -f "${MARKER}"
+fi
 
 # Freshly written samples sit in memory for a short while. Without flushing
 # them first, they would be missing from the snapshot.
@@ -54,6 +63,7 @@ if [[ -z "${snapshot}" ]]; then
     log "Could not create a snapshot, got: ${response}"
     false
 fi
+echo "${snapshot}" > "${MARKER}"
 log "Created snapshot ${snapshot}"
 
 # The snapshot is spread over three places, one per part of the database.
@@ -69,8 +79,15 @@ for part in small big indexdb; do
 done
 cp -a "${STORAGE}/snapshots/${snapshot}/metadata" "${STAGE}/metadata"
 
+# Databases that were created by an old version of VictoriaMetrics still have
+# their index in a separate place. Without it the backup would be incomplete.
+if [[ -e "${STORAGE}/snapshots/${snapshot}/indexdb" ]]; then
+    cp -alL "${STORAGE}/snapshots/${snapshot}/indexdb" "${STAGE}/indexdb"
+fi
+
 # The copy holds on to the data files by itself now.
 curl --silent --max-time 60 \
     "${API}/snapshot/delete?snapshot=${snapshot}" > /dev/null || true
+rm -f "${MARKER}"
 
 log "Backup copy is ready"
