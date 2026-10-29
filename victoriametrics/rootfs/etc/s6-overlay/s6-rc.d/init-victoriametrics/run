@@ -12,6 +12,10 @@ declare scrape_config
 declare stream_aggr_config
 declare -i jobs=0
 
+# After a restore from a backup, the database comes back as the copy that was
+# made for the backup. Put it into place before anything else touches storage.
+vm-restore || bashio::exit.nok "Restoring the database from the backup failed"
+
 mkdir -p "${STORAGE}"
 mkdir -p "$(dirname "${SCRAPE_CONFIG}")"
 

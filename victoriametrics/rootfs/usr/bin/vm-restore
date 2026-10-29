@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# shellcheck shell=bash
+# ==============================================================================
+# Home Assistant Community App: VictoriaMetrics
+# Puts the database back after the app was restored from a backup
+#
+# A backup holds the copy made by vm-backup-pre, not the live data. When the
+# app is restored, the copy is there and the live data is not, so it is moved
+# into place before VictoriaMetrics starts.
+# ==============================================================================
+set -o errexit -o nounset -o pipefail
+
+readonly STORAGE="${VM_STORAGE:-/data/victoriametrics}"
+readonly STAGE="${VM_BACKUP_STAGE:-/data/backup-snapshot}"
+
+log() {
+    echo "[vm-restore] $*"
+}
+
+if [[ -e "${STORAGE}/data" ]]; then
+    # An existing database is never replaced. A copy lying around next to it
+    # is left over from a backup that did not finish.
+    if [[ -e "${STAGE}" ]]; then
+        log "Removing a leftover backup copy"
+        rm -rf "${STAGE}"
+    fi
+    exit 0
+fi
+
+if [[ -d "${STAGE}/data" ]]; then
+    log "Restoring the database from the backup"
+    mkdir -p "${STORAGE}"
+    mv "${STAGE}/data" "${STORAGE}/data"
+    if [[ -d "${STAGE}/metadata" ]]; then
+        mv "${STAGE}/metadata" "${STORAGE}/metadata"
+    fi
+    rm -rf "${STAGE}"
+    log "Done"
+fi
