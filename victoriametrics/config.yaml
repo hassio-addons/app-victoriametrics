@@ -15,7 +15,11 @@ arch:
   - amd64
 auth_api: true
 homeassistant_api: true
-backup: cold
+backup: hot
+backup_pre: /usr/bin/vm-backup-pre
+backup_post: /usr/bin/vm-backup-post
+backup_exclude:
+  - victoriametrics
 ports:
   8428/tcp: null
 ports_description:

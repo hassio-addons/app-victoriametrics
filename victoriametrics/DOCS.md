@@ -734,14 +734,25 @@ request. Leave `leave_front_door_open` alone._
 
 ## Backups
 
-This app is backed up cold, which means Home Assistant stops it for the moment
-it takes to copy the database. A time series database that is copied while it
-is writing can come back subtly broken, and finding out a year later is not
-the moment you want to discover that.
+This app keeps running while it is backed up, so no metrics are lost during a
+backup. A time series database that is copied while it is writing can come back
+subtly broken, so the live data is not what ends up in the backup. Instead,
+right before the backup, the app asks VictoriaMetrics for a snapshot, which is
+a consistent copy of the data at one moment, and the backup holds that copy.
+It is made with hard links, so it is ready in moments and takes next to no
+extra disk space while the backup runs. When the app is restored, the copy is put back in place before
+VictoriaMetrics starts.
 
-The trade is a short gap in your metrics whenever a backup runs, and backups
-that grow with your history. If you keep years of data, consider whether this
-app belongs in your daily backup or only in the occasional full one.
+Things to know:
+
+- The backup holds the data as it was when the backup started. Anything
+  written after that moment is not part of it.
+- Backups grow with your history. If you keep years of data, consider whether
+  this app belongs in your daily backup or only in the occasional full one.
+- The app has to be running when the backup is taken. A backup of a stopped
+  app holds no database, because there is no copy to put into it.
+- Backups made by earlier versions of this app, which was stopped for the
+  backup, can still be restored.
 
 ## Known quirks
 
