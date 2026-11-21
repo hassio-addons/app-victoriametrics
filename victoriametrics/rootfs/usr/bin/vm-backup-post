@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# shellcheck shell=bash
+# ==============================================================================
+# Home Assistant Community App: VictoriaMetrics
+# Removes the copy that vm-backup-pre made for the backup
+# ==============================================================================
+set -o nounset
+
+readonly STAGE="${VM_BACKUP_STAGE:-/data/backup-snapshot}"
+
+rm -rf "${STAGE}"
+echo "[vm-backup-post] Removed the backup copy"
