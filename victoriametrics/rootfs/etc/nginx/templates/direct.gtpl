@@ -23,6 +23,17 @@ server {
         proxy_pass_request_body off;
         proxy_set_header        Content-Length "";
         proxy_set_header        X-Supervisor-Token "{{ env "SUPERVISOR_TOKEN" }}";
+
+        # proxy_params.conf disables buffering for streamed queries, but nginx
+        # only stores buffered responses in the cache. The auth reply is tiny.
+        proxy_buffering         on;
+
+        # Only successful checks are cached (failures are never cached).
+        proxy_cache             auth_cache;
+        proxy_cache_key         $http_authorization;
+        proxy_cache_valid       200 1m;
+        proxy_cache_bypass      $auth_cache_skip;
+        proxy_no_cache          $auth_cache_skip;
     }
     {{ end }}
 
