@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+# shellcheck shell=bash
+# ==============================================================================
+# Home Assistant Community App: VictoriaMetrics
+# Prepares a consistent copy of the database for a backup, while it keeps running
+#
+# VictoriaMetrics can take an instant snapshot of its data without stopping.
+# The snapshot itself is only a set of links into the live data, so it is
+# turned into a plain, self-contained copy of hard links here. That copy is
+# what ends up in the backup (the live data is excluded, see config.yaml), and
+# vm-restore puts it back when the app starts after a restore.
+# ==============================================================================
+set -o errexit -o nounset -o pipefail
+
+readonly API="${VM_API:-http://127.0.0.1:48428}"
+readonly STORAGE="${VM_STORAGE:-/data/victoriametrics}"
+readonly STAGE="${VM_BACKUP_STAGE:-/data/backup-snapshot}"
+readonly MARKER="${STAGE}.snapshot"
+declare snapshot=""
+declare stale=""
+
+log() {
+    echo "[vm-backup-pre] $*"
+}
+
+cleanup_failed() {
+    log "Failed, removing the partial backup copy"
+    rm -rf "${STAGE}"
+    if [[ -n "${snapshot}" ]]; then
+        curl --silent --max-time 60 \
+            "${API}/snapshot/delete?snapshot=${snapshot}" > /dev/null || true
+    fi
+    rm -f "${MARKER}"
+}
+trap cleanup_failed ERR
+
+# A copy left behind by an earlier backup that did not finish is of no use.
+rm -rf "${STAGE}"
+
+# A snapshot of an earlier run that was never cleaned up would only hold on to
+# disk space, since it keeps old data files alive. Only the snapshot this
+# script made itself is removed, others may belong to somebody else.
+if [[ -f "${MARKER}" ]]; then
+    stale=$(< "${MARKER}")
+    curl --silent --max-time 60 \
+        "${API}/snapshot/delete?snapshot=${stale}" > /dev/null || true
+    rm -f "${MARKER}"
+fi
+
+# Freshly written samples sit in memory for a short while. Without flushing
+# them first, they would be missing from the snapshot.
+curl --fail --silent --show-error --max-time 120 \
+    "${API}/internal/force_flush" > /dev/null
+
+response=$(
+    curl --fail --silent --show-error --max-time 300 \
+        "${API}/snapshot/create"
+)
+snapshot=$(
+    sed -n 's/.*"snapshot":"\([^"]*\)".*/\1/p' <<< "${response}"
+)
+if [[ -z "${snapshot}" ]]; then
+    log "Could not create a snapshot, got: ${response}"
+    false
+fi
+echo "${snapshot}" > "${MARKER}"
+log "Created snapshot ${snapshot}"
+
+# The snapshot is spread over three places, one per part of the database.
+# Hard links make the copy instant and keep it from using extra disk space.
+mkdir -p "${STAGE}/data"
+for part in small big indexdb; do
+    source_dir="${STORAGE}/data/${part}/snapshots/${snapshot}"
+    if [[ ! -d "${source_dir}" ]]; then
+        log "Snapshot is incomplete, ${source_dir} is missing"
+        false
+    fi
+    cp -al "${source_dir}" "${STAGE}/data/${part}"
+done
+cp -a "${STORAGE}/snapshots/${snapshot}/metadata" "${STAGE}/metadata"
+
+# Databases that were created by an old version of VictoriaMetrics still have
+# their index in a separate place. Without it the backup would be incomplete.
+if [[ -e "${STORAGE}/snapshots/${snapshot}/indexdb" ]]; then
+    cp -alL "${STORAGE}/snapshots/${snapshot}/indexdb" "${STAGE}/indexdb"
+fi
+
+# The copy holds on to the data files by itself now.
+curl --silent --max-time 60 \
+    "${API}/snapshot/delete?snapshot=${snapshot}" > /dev/null || true
+rm -f "${MARKER}"
+
+log "Backup copy is ready"
